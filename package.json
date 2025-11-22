@@ -9,7 +9,8 @@
     "test": "vitest --environment jsdom",
     "lint": "eslint .",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit -p tsconfig.app.json"
+    "typecheck": "tsc --noEmit -p tsconfig.app.json",
+    "vercel-build": "bash ./scripts/install-libatomic.sh && npm run build"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
