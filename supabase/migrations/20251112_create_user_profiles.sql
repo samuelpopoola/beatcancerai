@@ -1,0 +1,1 @@
+-- Placeholder migration: 20251112_create_user_profiles already applied remotely.

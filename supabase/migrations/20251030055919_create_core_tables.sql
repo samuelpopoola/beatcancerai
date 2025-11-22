@@ -1,0 +1,1 @@
+-- Placeholder migration: 20251030055919_create_core_tables already applied remotely.

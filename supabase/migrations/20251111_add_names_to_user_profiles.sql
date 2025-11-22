@@ -1,0 +1,1 @@
+-- Placeholder migration: 20251111_add_names_to_user_profiles already applied remotely.

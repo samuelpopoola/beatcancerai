@@ -1,0 +1,1 @@
+-- Placeholder migration: 20251122_enhance_chat_schema already applied remotely.

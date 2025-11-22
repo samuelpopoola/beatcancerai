@@ -1,0 +1,1 @@
+-- Placeholder for migrations applied on 20251121

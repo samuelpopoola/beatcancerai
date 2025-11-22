@@ -1,0 +1,421 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html {
+	min-height: 100%;
+	color-scheme: light;
+	scroll-behavior: smooth;
+}
+
+:root.dark {
+	color-scheme: dark;
+}
+
+body {
+	margin: 0;
+	min-height: 100vh;
+	background-image: linear-gradient(135deg, var(--app-bg-start), var(--app-bg-via), var(--app-bg-end));
+	background-repeat: no-repeat;
+	background-attachment: fixed;
+	color: var(--text-primary);
+	font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+#root {
+	min-height: 100vh;
+	display: flex;
+	flex-direction: column;
+}
+
+/* Responsive design system variables (mobile-first) */
+:root {
+	/* Spacing scale (rem-based) */
+	--space-1: 0.25rem; /* 4px */
+	--space-2: 0.5rem;  /* 8px */
+	--space-3: 0.75rem; /* 12px */
+	--space-4: 1rem;    /* 16px */
+	--space-5: 1.5rem;  /* 24px */
+	--space-6: 2rem;    /* 32px */
+
+	/* Container max width */
+	--container-max-width: 1120px;
+
+	/* Fluid type scale (mobile-first using clamp) */
+	--h1-size: clamp(1.25rem, 1.1rem + 2.4vw, 2.25rem);
+	--h2-size: clamp(1rem, 0.8rem + 1.6vw, 1.75rem);
+	--body-size: clamp(0.95rem, 0.9rem + 0.4vw, 1rem);
+
+	/* Safe-area insets for modern devices */
+	--safe-top: max(env(safe-area-inset-top, 0px), 0px);
+	--safe-right: max(env(safe-area-inset-right, 0px), 0px);
+	--safe-bottom: max(env(safe-area-inset-bottom, 0px), 0px);
+	--safe-left: max(env(safe-area-inset-left, 0px), 0px);
+}
+
+/* Container with responsive padding and max-width */
+.container {
+	width: 100%;
+	margin-left: auto;
+	margin-right: auto;
+	padding-left: var(--space-4);
+	padding-right: var(--space-4);
+	max-width: var(--container-max-width);
+}
+
+.app-shell {
+	min-height: 100vh;
+	padding-top: calc(var(--safe-top) + var(--space-4));
+	padding-bottom: calc(var(--safe-bottom) + var(--space-4));
+	padding-left: max(var(--space-3), var(--safe-left));
+	padding-right: max(var(--space-3), var(--safe-right));
+	background-image: linear-gradient(135deg, var(--app-bg-start), var(--app-bg-via), var(--app-bg-end));
+}
+
+.surface-card {
+	background: var(--card-solid, #ffffff);
+	border-radius: 1rem;
+	box-shadow: 0 25px 50px rgba(15, 23, 42, 0.08);
+	padding: clamp(1.25rem, 0.75rem + 1vw, 2rem);
+}
+
+.safe-area-below-nav {
+	padding-bottom: calc(var(--safe-bottom) + var(--space-4));
+}
+
+/* Breakpoints (mobile-first): Tablet 600px, Laptop 1024px, Desktop 1440px */
+@media (min-width: 600px) {
+	.container { padding-left: calc(var(--space-4) * 1.25); padding-right: calc(var(--space-4) * 1.25); }
+}
+@media (min-width: 1024px) {
+	.container { padding-left: calc(var(--space-4) * 1.5); padding-right: calc(var(--space-4) * 1.5); }
+}
+@media (min-width: 1440px) {
+	.container { padding-left: calc(var(--space-4) * 2); padding-right: calc(var(--space-4) * 2); }
+}
+
+/* Fluid typography helpers */
+.fluid-h1 { font-size: var(--h1-size); line-height: 1.05; }
+.fluid-h2 { font-size: var(--h2-size); line-height: 1.15; }
+.body-text { font-size: var(--body-size); }
+
+/* Utility: visually-hidden for accessibility */
+.sr-only {
+	position: absolute !important;
+	height: 1px; width: 1px; overflow: hidden;
+	clip: rect(1px, 1px, 1px, 1px);
+	white-space: nowrap; border: 0; padding: 0; margin: -1px;
+}
+
+/* Smooth transitions for theme switch */
+html, body, #root {
+	transition: background-color 300ms ease, color 300ms ease;
+}
+
+/* Slight adjustment for dark mode text smoothing */
+html.dark body {
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+}
+
+/* Theme color variables
+	 We define a set of CSS variables for the app's light and dark palettes.
+	 Many components use Tailwind utility classes (e.g. bg-white, text-gray-800).
+	 To avoid a large refactor, we override a few common utility classes in dark mode
+	 to map them to the dark palette. This keeps existing markup intact while
+	 yielding a cohesive dark theme that matches the app's blue/green accents.
+*/
+:root {
+	/* light (defaults) */
+	--app-bg-start: #eff6ff; /* blue-50 */
+	--app-bg-via: #ffffff; /* white */
+	--app-bg-end: #ecfdf5; /* green-50 */
+	--nav-bg: #ffffff;
+	--card-bg: #ffffff;
+	--text-primary: #1f2937; /* gray-800 */
+	--text-muted: #4b5563; /* gray-600 */
+	--border: #e5e7eb; /* gray-200 */
+}
+
+.dark {
+	/* tuned dark palette that complements the blue/green accents */
+	--app-bg-start: #071230; /* deep navy with a blue hint */
+	--app-bg-via: #0b1524; /* near-black slate */
+	--app-bg-end: #071827; /* dark teal-ish */
+	--nav-bg: #071227; /* navigation surface */
+	--card-bg: linear-gradient(180deg, rgba(17,24,39,0.85), rgba(10,14,22,0.85)); /* subtle glossy card */
+	--card-solid: #0b1220; /* fallback solid for cards */
+	--text-primary: #e6eef8; /* soft off-white for text */
+	--text-muted: #9aa7b7; /* muted cool gray for secondary text */
+	--border: #15202b;
+}
+
+/* Apply app background using variables so pages using min-h-screen get the correct gradient */
+.min-h-screen {
+	background-image: linear-gradient(135deg, var(--app-bg-start), var(--app-bg-via), var(--app-bg-end));
+}
+
+/* Dark-mode overrides for commonly used utility classes */
+.dark .bg-white { background: var(--card-solid) !important; }
+.dark .bg-white.rounded-2xl, .dark .bg-white.rounded-lg { background: var(--card-bg) !important; }
+.dark .text-gray-800 { color: var(--text-primary) !important; }
+.dark .text-gray-600 { color: var(--text-muted) !important; }
+.dark .border-gray-200 { border-color: var(--border) !important; }
+.dark .bg-blue-50 { background: transparent !important; }
+
+/* Nav specific */
+.dark nav.bg-white { background-color: var(--nav-bg) !important; }
+
+/* Buttons & subtle elements */
+.dark .bg-blue-50, .dark .bg-green-50 { background: transparent !important; }
+.dark .text-blue-600 { color: #60a5fa !important; } /* keep readable blue accent */
+.dark .from-blue-500 { color: #3b82f6 !important; }
+
+/* Semantic utility classes that map to the CSS variables above.
+	 These allow gradual refactor from Tailwind utility classes to semantic tokens.
+*/
+.bg-app {
+	background-image: linear-gradient(135deg, var(--app-bg-start), var(--app-bg-via), var(--app-bg-end));
+}
+
+.nav-surface {
+	background: var(--nav-bg);
+}
+
+.card {
+	background: var(--card-solid, #ffffff);
+	border-radius: 1rem; /* rounded-2xl */
+	box-shadow: 0 10px 20px rgba(2,6,23,0.08);
+	padding: 2rem;
+}
+
+.btn-primary {
+	background: linear-gradient(90deg, var(--primary, #3b82f6) 0%, var(--accent, #10b981) 100%);
+	color: white;
+	border-radius: 0.75rem;
+	padding: 0.75rem 1rem;
+	font-weight: 700;
+	box-shadow: 0 10px 30px rgba(59,130,246,0.12);
+	border: none;
+}
+
+.input-field {
+	/* Light-mode friendly inputs by default */
+	background: var(--input-bg-light, #ffffff);
+	border: 1px solid var(--border);
+	padding: 0.75rem 1rem;
+	border-radius: 0.6rem;
+	color: var(--text-primary);
+	transition: border-color .12s ease, box-shadow .12s ease, background .12s ease;
+}
+
+/* Dark-mode specific input look (overrides above via .dark selector) */
+.dark .input-field {
+	background: linear-gradient(180deg, var(--input-bg), var(--input-inner));
+	border: 1px solid var(--input-border);
+	color: var(--text-primary);
+}
+
+/* Modal-specific card styles to make the Add Task form feel elevated */
+.modal-card {
+	border-radius: 0.75rem;
+	padding: 1.25rem;
+	box-shadow: 0 30px 60px rgba(2,6,23,0.35);
+	background: var(--card-bg, #ffffff);
+}
+
+/* Slightly larger close button */
+.modal-card > .flex > button {
+	font-size: 20px;
+	line-height: 1;
+}
+
+.alert-info {
+	background: rgba(59,130,246,0.06);
+	border: 1px solid rgba(191,219,254,0.4);
+	color: #0b61c9;
+	padding: 0.75rem 1rem;
+	border-radius: 0.5rem;
+}
+
+.dark .card {
+	/* card uses gradient variable defined above */
+	background: var(--card-bg);
+}
+
+.dark .surface-card {
+	background: var(--card-bg);
+	border: 1px solid rgba(255,255,255,0.05);
+}
+
+/* Page-specific dark-mode fixes to ensure readable text/icons on components */
+/* Dashboard stat tiles (blue/green/purple gradients) */
+.dark .bg-gradient-to-br.from-blue-500.to-blue-600,
+.dark .bg-gradient-to-br.from-blue-500\:to-blue-600 {
+	/* Brighter, more attractive blue gradient for overview tile */
+	background: linear-gradient(135deg, #2b6df6 0%, #0ea5d9 100%) !important;
+	color: #ffffff !important; /* ensure numbers/icons stay white */
+}
+.dark .bg-gradient-to-br.from-green-500.to-green-600,
+.dark .bg-gradient-to-br.from-green-500\:to-green-600 {
+	/* Warmer green gradient with good contrast */
+	background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
+	color: #ffffff !important;
+}
+.dark .bg-gradient-to-br.from-purple-500.to-purple-600,
+.dark .bg-gradient-to-br.from-purple-500\:to-purple-600 {
+	/* Lively purple gradient */
+	background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%) !important;
+	color: #ffffff !important;
+}
+
+/* Ensure the small colored badges and icon backgrounds in lists remain visible */
+.dark .bg-blue-100 { background: rgba(59,130,246,0.08) !important; }
+.dark .text-blue-600 { color: #86c6ff !important; }
+.dark .text-blue-100 { color: rgba(230,242,255,0.9) !important; }
+.dark .bg-green-100 { background: rgba(16,185,129,0.06) !important; }
+.dark .text-green-600 { color: #7ee7c2 !important; }
+.dark .bg-purple-100 { background: rgba(168,85,247,0.05) !important; }
+.dark .text-purple-600 { color: #c9a8ff !important; }
+
+/* Override the pale utility backgrounds used for informational blocks and disclaimers */
+.dark .bg-gray-50,
+.dark .bg-white.rounded-xl,
+.dark .bg-white.rounded-lg {
+	/* Slightly translucent surfaces so content pops but remains cohesive */
+	background: linear-gradient(180deg, rgba(12,18,26,0.42), rgba(8,12,18,0.42)) !important;
+	color: var(--text-primary) !important;
+	border-color: rgba(255,255,255,0.045) !important;
+}
+
+/* AI Insights small cards (bg-blue-50/border-blue-500) */
+.dark .bg-blue-50 { background: rgba(59,130,246,0.06) !important; }
+.dark .border-blue-500 { border-color: rgba(79,156,255,0.22) !important; }
+.dark .bg-yellow-50 { background: rgba(245,158,11,0.03) !important; }
+.dark .border-yellow-500 { border-color: rgba(245,158,11,0.12) !important; }
+.dark .bg-green-50 { background: rgba(16,185,129,0.03) !important; }
+.dark .border-green-500 { border-color: rgba(16,185,129,0.12) !important; }
+
+/* Card inner text colors used across pages */
+.dark .text-gray-800 { color: var(--text-primary) !important; }
+.dark .text-gray-600 { color: var(--text-muted) !important; }
+.dark .text-gray-500 { color: rgba(255,255,255,0.6) !important; }
+
+/* CarePlan column headers: ensure count bubble has contrast */
+.dark .bg-white.px-2.py-1.rounded,
+.dark .px-2.py-1.rounded.bg-white { background: rgba(255,255,255,0.02) !important; color: var(--text-primary) !important; border-color: rgba(255,255,255,0.04) !important; }
+
+/* Ensure active pill badges inside tasks are visible */
+.dark .bg-blue-600 { background-color: #2563eb !important; }
+.dark .text-white { color: #eef6ff !important; }
+
+/* Insights: make Treatment Progress Summary visible in dark mode (gradient card) */
+.dark .bg-gradient-to-r.from-blue-500.to-purple-500,
+.dark .bg-gradient-to-r.from-blue-500\:to-purple-500 {
+	/* Treatment progress: richer blue -> purple gradient with white text */
+	background: linear-gradient(90deg, #0f62d0 0%, #7c3aed 100%) !important;
+	color: #ffffff !important;
+}
+
+/* Recent Lab Results rows */
+.dark .bg-gray-50.rounded-lg,
+.dark .flex.items-center.justify-between.p-3.bg-gray-50.rounded-lg {
+	background: linear-gradient(180deg, rgba(14,20,26,0.55), rgba(10,14,18,0.55)) !important;
+	color: var(--text-primary) !important;
+}
+.dark .text-lg.font-bold.text-gray-800 { color: var(--text-primary) !important; }
+
+/* Small tweaks for icon visibility inside colored circles */
+.dark .w-12.h-12.bg-white.bg-opacity-20 { background-color: rgba(255,255,255,0.06) !important; }
+.dark svg { color: inherit; stroke: currentColor; fill: none; }
+
+/* Modal form refinements (light & dark) */
+.modal-card { color: var(--text-primary); }
+.modal-card .input-field,
+.modal-card select,
+.modal-card textarea {
+	background: linear-gradient(180deg, var(--input-bg, #ffffff), var(--input-inner, rgba(0,0,0,0.02)));
+	border: 1px solid var(--input-border, rgba(148,163,184,0.12));
+	color: var(--text-primary);
+}
+.modal-card select { appearance: auto; }
+.modal-card option { background: inherit; color: inherit; }
+.modal-card .btn-primary { box-shadow: 0 12px 30px rgba(59,130,246,0.14); }
+
+/* Dark-mode modal specifics - make form container slightly lighter than the page card so inputs stand out */
+.dark .modal-card {
+	background: linear-gradient(180deg, rgba(17,24,39,0.92), rgba(10,14,18,0.92)) !important;
+	color: var(--text-primary) !important;
+	border: 1px solid rgba(255,255,255,0.045) !important;
+}
+.dark .modal-card .input-field,
+.dark .modal-card select,
+.dark .modal-card textarea {
+	background: linear-gradient(180deg, var(--input-bg, #07121a), var(--input-inner, rgba(255,255,255,0.02)));
+	border: 1px solid rgba(255,255,255,0.06);
+	color: var(--text-primary);
+}
+.dark .modal-card option,
+.dark option {
+	background: #07121a !important;
+	color: var(--text-primary) !important;
+}
+
+/* Ensure select/option text remains visible across browsers */
+.dark select,
+.dark option,
+.dark textarea,
+.dark input {
+	color: var(--text-primary) !important;
+}
+
+/* Ensure all native inputs and textareas remain legible in dark mode, even without utility classes */
+.dark input[type="text"],
+.dark input[type="email"],
+.dark input[type="password"],
+.dark input[type="number"],
+.dark input[type="tel"],
+.dark input[type="search"],
+.dark input[type="url"],
+.dark textarea,
+.dark select {
+	background-color: rgba(10, 18, 32, 0.85) !important;
+	border-color: rgba(255, 255, 255, 0.12) !important;
+	color: var(--text-primary) !important;
+	caret-color: var(--text-primary);
+}
+
+.dark input::placeholder,
+.dark textarea::placeholder {
+	color: rgba(230, 238, 248, 0.6) !important;
+}
+
+img,
+svg,
+video,
+canvas {
+	max-width: 100%;
+	height: auto;
+}
+
+@media (max-width: 640px) {
+	.card,
+	.surface-card {
+		padding: 1.5rem;
+	}
+
+	.btn-primary {
+		width: 100%;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	*, *::before, *::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+		scroll-behavior: auto !important;
+	}
+}
+
+

@@ -1,0 +1,1 @@
+-- Placeholder migration: 20251117_enable_rls_user_profiles already applied remotely.

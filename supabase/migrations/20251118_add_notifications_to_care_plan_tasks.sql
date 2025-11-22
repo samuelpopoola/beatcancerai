@@ -1,0 +1,1 @@
+-- Placeholder migration: 20251118_add_notifications_to_care_plan_tasks already applied remotely.
