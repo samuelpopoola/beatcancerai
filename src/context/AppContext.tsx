@@ -120,8 +120,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const profile = await databaseService.getUserProfile(userId);
       if (profile) {
         setUserProfile(profile);
-        // After onboarding, land users on Messaging by default
-        setCurrentPage(profile.completed_onboarding ? 'messaging' : 'onboarding');
+        // After onboarding, land users on the dashboard for a comprehensive overview
+        setCurrentPage(profile.completed_onboarding ? 'dashboard' : 'onboarding');
       } else {
         setCurrentPage('onboarding');
       }
