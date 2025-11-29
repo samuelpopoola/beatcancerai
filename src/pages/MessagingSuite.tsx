@@ -5,6 +5,8 @@ import { useApp } from '../context/AppContext';
 import { useConversations } from '../hooks/useConversations';
 import { AttachmentManifestEntry, useChat } from '../hooks/useChat';
 import { supabase } from '../lib/supabase';
+import VideoCall from '../components/VideoCall';
+import { createVideoRoom, VideoProvider } from '../services/videoService';
 
 const CHAT_BUCKET = import.meta.env.VITE_SUPABASE_CHAT_BUCKET || 'chat-attachments';
 
@@ -60,6 +62,8 @@ const ChatWorkspace: React.FC = () => {
   const [attachmentFiles, setAttachmentFiles] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const typingTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [provider, setProvider] = useState<VideoProvider>('whereby');
 
   useEffect(() => () => {
     if (typingTimeout.current) {
@@ -165,6 +169,24 @@ const ChatWorkspace: React.FC = () => {
       alert('Unable to send message right now. Please retry.');
     } finally {
       setIsSending(false);
+    }
+  };
+
+  const handleEscalateToVideo = async () => {
+    if (!resolvedConversation?.id || !user?.id) return;
+    try {
+      const room = await createVideoRoom({ provider, title: 'Consult', startAudioOff: false, startVideoOff: false, expireMinutes: 120 });
+      setVideoUrl(room.url);
+      // send the invite into the chat so others can join
+      await sendMessage({
+        conversationId: resolvedConversation.id,
+        senderId: user.id,
+        content: `Join video: ${room.url}`,
+        messageType: 'video_invite',
+      });
+    } catch (error) {
+      console.error('Failed to create video room', error);
+      alert('Unable to start video call right now.');
     }
   };
 
@@ -287,9 +309,20 @@ const ChatWorkspace: React.FC = () => {
                 {resolvedConversation?.metadata?.title as string || 'Secure thread'}
               </h2>
             </div>
-            <button className="inline-flex items-center gap-2 rounded-full border border-gray-200 px-4 py-2 text-sm text-gray-600">
-              <Video className="h-4 w-4" /> Escalate to video
-            </button>
+            <div className="flex items-center gap-2">
+              <select
+                className="rounded-full border border-gray-200 px-3 py-1 text-xs text-gray-600"
+                value={provider}
+                onChange={(e) => setProvider(e.target.value as VideoProvider)}
+                title="Video provider"
+              >
+                <option value="whereby">Whereby</option>
+                <option value="daily">Daily</option>
+              </select>
+              <button onClick={handleEscalateToVideo} className="inline-flex items-center gap-2 rounded-full border border-gray-200 px-4 py-2 text-sm text-gray-600">
+                <Video className="h-4 w-4" /> Escalate to video
+              </button>
+            </div>
           </div>
 
           {renderMessages()}
@@ -359,6 +392,7 @@ const ChatWorkspace: React.FC = () => {
           </div>
         </aside>
       </div>
+      {videoUrl && <VideoCall roomUrl={videoUrl} onClose={() => setVideoUrl(null)} title="Video Consultation" />}
     </div>
   );
 };

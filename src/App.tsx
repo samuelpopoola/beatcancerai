@@ -1,6 +1,7 @@
 import { AppProvider, useApp } from './context/AppContext';
 import Layout from './components/Layout';
 import Auth from './pages/Auth';
+import LandingPage from './pages/LandingPage';
 import Onboarding from './pages/Onboarding';
 import Dashboard from './pages/Dashboard';
 import MedicalRecords from './pages/MedicalRecords';
@@ -9,11 +10,12 @@ import Insights from './pages/Insights';
 import MedicationScheduler from './pages/MedicationScheduler';
 import Messaging from './pages/Messaging';
 import TreatmentTracker from './pages/TreatmentTracker';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom';
 // EnvironmentChecker removed: do not render environment banners in production UI
 
 function AppContent() {
   const { currentPage, user, isLoading } = useApp();
+  const navigate = useNavigate();
 
   if (isLoading) {
     return (
@@ -27,7 +29,7 @@ function AppContent() {
   }
 
   if (!user) {
-    return <Auth />;
+    return <LandingPage onLoginClick={() => navigate('/auth')} />;
   }
 
   const renderPage = () => {
@@ -65,6 +67,7 @@ function App() {
     <AppProvider>
       <BrowserRouter>
         <Routes>
+          <Route path="/auth" element={<Auth />} />
           <Route path="/" element={<AppContent />} />
           <Route path="/medications" element={<Layout><MedicationScheduler /></Layout>} />
           <Route path="/messaging" element={<Layout><Messaging /></Layout>} />

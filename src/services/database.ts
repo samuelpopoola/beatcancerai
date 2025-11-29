@@ -4,6 +4,130 @@ import { UserProfile } from '../types';
 const MEDICAL_RECORDS_BUCKET = import.meta.env.VITE_SUPABASE_MEDICAL_BUCKET || 'medical-records';
 
 export const databaseService = {
+  // --- Messaging: chat helpers (profiles/chats/chat_members/messages schema) ---
+  async ensureDirectChat(currentUserId: string, otherUserId: string) {
+    // Try to find an existing chat where both users are members
+    try {
+      const { data: existing } = await supabase
+        .rpc('find_direct_chat', { u1: currentUserId, u2: otherUserId });
+
+      if (existing && existing[0] && existing[0].id) {
+        return existing[0].id as string;
+      }
+    } catch {
+      // RPC may not exist; fall back to SQL lookups
+      const { data: candidates } = await supabase
+        .from('chats')
+        .select('id, chat_members!inner(user_id)');
+      const match = (candidates as any[] | null)?.find((c) => {
+        const ids = (c.chat_members || []).map((m: any) => m.user_id);
+        return ids.includes(currentUserId) && ids.includes(otherUserId) && ids.length === 2;
+      });
+      if (match) return match.id as string;
+    }
+
+    // Create a new private chat and add memberships
+    const { data: chat, error: chatErr } = await supabase
+      .from('chats')
+      .insert({ created_by: currentUserId })
+      .select('id')
+      .single();
+    if (chatErr) throw chatErr;
+
+    const chatId = chat.id as string;
+
+    // Add current user membership (allowed by RLS)
+    try {
+      await supabase
+        .from('chat_members')
+        .insert({ chat_id: chatId, user_id: currentUserId, role: 'participant' })
+        .select('id')
+        .single();
+    } catch {
+      // ignore; membership might already exist
+    }
+
+    // Attempt to add the other user; may fail due to RLS, ignore for client-side
+    try {
+      await supabase
+        .from('chat_members')
+        .insert({ chat_id: chatId, user_id: otherUserId, role: 'participant' })
+        .select('id')
+        .single();
+    } catch {
+      // likely blocked by RLS; ignore client-side and rely on server automation
+    }
+
+    return chatId;
+  },
+  // --- Consult queue helpers ---
+  async setClinicianOnline(userId: string, online: boolean) {
+    const { data, error } = await supabase
+      .from('clinician_status')
+      .upsert({ user_id: userId, is_online: online, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
+      .select('user_id, is_online')
+      .single();
+    if (error) throw error;
+    return data;
+  },
+  async requestConsult(patientId: string) {
+    const { data, error } = await supabase
+      .from('consult_queue')
+      .insert({ patient_id: patientId, status: 'waiting' })
+      .select('*')
+      .single();
+    if (error) throw error;
+    return data;
+  },
+  async cancelConsultRequest(requestId: string) {
+    const { data, error } = await supabase
+      .from('consult_queue')
+      .update({ status: 'cancelled', updated_at: new Date().toISOString() })
+      .eq('id', requestId)
+      .select('*')
+      .single();
+    if (error) throw error;
+    return data;
+  },
+  async myConsultPosition(patientId: string) {
+    // Count how many waiting requests were created before mine
+    const { data: mine, error: mineErr } = await supabase
+      .from('consult_queue')
+      .select('id, created_at')
+      .eq('patient_id', patientId)
+      .eq('status', 'waiting')
+      .order('created_at', { ascending: true })
+      .limit(1);
+    if (mineErr) throw mineErr;
+    if (!mine || !mine[0]) return null;
+    const createdAt = mine[0].created_at as string;
+    const { count } = await supabase
+      .from('consult_queue')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'waiting')
+      .lt('created_at', createdAt);
+    return typeof count === 'number' ? count + 1 : 1;
+  },
+  async clinicianTakeNext(clinicianId: string) {
+    // Get the earliest waiting request
+    const { data: next, error: nextErr } = await supabase
+      .from('consult_queue')
+      .select('*')
+      .eq('status', 'waiting')
+      .order('created_at', { ascending: true })
+      .limit(1);
+    if (nextErr) throw nextErr;
+    if (!next || !next[0]) return null;
+    const request = next[0];
+    const { data, error } = await supabase
+      .from('consult_queue')
+      .update({ status: 'assigned', assigned_to: clinicianId, updated_at: new Date().toISOString() })
+      .eq('id', request.id)
+      .select('*')
+      .single();
+    if (error) throw error;
+    return data;
+  },
   async getUserProfile(userId: string) {
     const { data, error } = await supabase
       .from('user_profiles')
@@ -375,8 +499,72 @@ export const databaseService = {
   },
 
   // Messaging helpers
-  async getMessages(userId: string) {
+  async getMessages(userId: string, peerId?: string) {
+    const isMissingColumnError = (err: any) =>
+      err && (err.code === '42703' || String(err.message || '').toLowerCase().includes('column'));
+
+    const hydrateSenderNames = async (messageList: any[]) => {
+      const missingIds = Array.from(new Set(messageList.filter((m) => !m.senderName).map((m) => m.senderId))).filter(Boolean);
+      if (!missingIds.length) return messageList;
+      const { data: profiles } = await supabase
+        .from('user_profiles')
+        .select('id, full_name')
+        .in('id', missingIds);
+      const nameMap: Record<string, string> = {};
+      (profiles || []).forEach((p: any) => { nameMap[p.id] = p.full_name || ''; });
+      return messageList.map((m) => ({ ...m, senderName: m.senderName || nameMap[m.senderId] || 'User' }));
+    };
+
     try {
+      // If a peer is provided, prefer direct sender/receiver conversation
+      if (peerId) {
+        const orFilter = `and(sender_id.eq.${userId},receiver_id.eq.${peerId}),and(sender_id.eq.${peerId},receiver_id.eq.${userId})`;
+        try {
+          const { data, error } = await supabase
+            .from('messages')
+            .select('id, sender_id, receiver_id, content, created_at, type, sender_name, delivered_at, read_at')
+            .or(orFilter)
+            .order('created_at', { ascending: true });
+
+          if (error && !isMissingColumnError(error)) throw error;
+          if (!error) {
+            const directMessages = (data || []).map((m: any) => ({
+              id: m.id,
+              senderId: m.sender_id,
+              senderName: m.sender_name || '',
+              message: m.content || m.message || '',
+              timestamp: m.created_at ? new Date(m.created_at) : new Date(),
+              type: m.type || 'text',
+              deliveredAt: m.delivered_at ? new Date(m.delivered_at) : undefined,
+              readAt: m.read_at ? new Date(m.read_at) : undefined,
+            }));
+            return await hydrateSenderNames(directMessages);
+          }
+        } catch (innerErr) {
+          if (!isMissingColumnError(innerErr)) throw innerErr;
+          // fall through to chats-based schema
+        }
+
+        const chatId = await this.ensureDirectChat(userId, peerId);
+        const { data, error } = await supabase
+          .from('messages')
+          .select('id, chat_id, sender_id, content, created_at, meta, seen')
+          .eq('chat_id', chatId)
+          .order('created_at', { ascending: true });
+        if (error) throw error;
+        const msgs = (data || []).map((m: any) => ({
+          id: String(m.id),
+          senderId: m.sender_id,
+          senderName: '',
+          message: m.content || '',
+          timestamp: m.created_at ? new Date(m.created_at) : new Date(),
+          type: (m.meta && (m.meta as any).type) || 'text',
+          deliveredAt: undefined,
+          readAt: m.seen ? new Date(m.created_at) : undefined,
+        }));
+        return await hydrateSenderNames(msgs);
+      }
+
       // Primary: messages table with sender_id/receiver_id
       const { data, error } = await supabase
         .from('messages')
@@ -395,34 +583,24 @@ export const databaseService = {
           deliveredAt: m.delivered_at ? new Date(m.delivered_at) : undefined,
           readAt: m.read_at ? new Date(m.read_at) : undefined,
         }));
-        // Join profiles if senderName missing
-        const missingIds = Array.from(new Set(messages.filter(m => !m.senderName).map(m => m.senderId))).filter(Boolean);
-        if (missingIds.length) {
-          const { data: profiles } = await supabase
-            .from('user_profiles')
-            .select('id, full_name')
-            .in('id', missingIds);
-          const nameMap: Record<string, string> = {};
-          (profiles || []).forEach((p: any) => { nameMap[p.id] = p.full_name || ''; });
-          return messages.map(m => ({ ...m, senderName: m.senderName || nameMap[m.senderId] || 'User' }));
-        }
-        return messages;
+        return await hydrateSenderNames(messages);
       }
 
       // Fallback: some schemas store messages under chats -> try chat lookup
+      // Chats-based schema: fetch all chats where current user is a member
       const { data: chats, error: chatErr } = await supabase
-        .from('chats')
-        .select('id')
-        .or(`patient_id.eq.${userId},caregiver_id.eq.${userId},created_by.eq.${userId}`);
+        .from('chat_members')
+        .select('chat_id')
+        .eq('user_id', userId);
 
       if (chatErr) throw chatErr;
-      const chatIds = (chats || []).map((c: any) => c.id);
+      const chatIds = (chats || []).map((c: any) => c.chat_id);
       if (chatIds.length === 0) return [];
 
       const { data: msgs, error: msgsErr } = await supabase
         .from('messages')
-        .select('id, sender_id, content, created_at, type, delivered_at, read_at')
-        .in('chat_id', chatIds)
+        .select('id, chat_id, sender_id, content, created_at, meta, seen')
+        .in('chat_id', chatIds as any)
         .order('created_at', { ascending: true });
 
       if (msgsErr) throw msgsErr;
@@ -432,21 +610,11 @@ export const databaseService = {
         senderName: '',
         message: m.content || m.message || '',
         timestamp: m.created_at ? new Date(m.created_at) : new Date(),
-        type: m.type || 'text',
-        deliveredAt: m.delivered_at ? new Date(m.delivered_at) : undefined,
-        readAt: m.read_at ? new Date(m.read_at) : undefined,
+        type: (m.meta && (m.meta as any).type) || 'text',
+        deliveredAt: undefined,
+        readAt: m.seen ? new Date(m.created_at) : undefined,
       }));
-      const missingIds = Array.from(new Set(messages.filter(m => !m.senderName).map(m => m.senderId))).filter(Boolean);
-      if (missingIds.length) {
-        const { data: profiles } = await supabase
-          .from('user_profiles')
-          .select('id, full_name')
-          .in('id', missingIds);
-        const nameMap: Record<string, string> = {};
-        (profiles || []).forEach((p: any) => { nameMap[p.id] = p.full_name || ''; });
-        return messages.map(m => ({ ...m, senderName: nameMap[m.senderId] || 'User' }));
-      }
-      return messages;
+      return await hydrateSenderNames(messages);
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('getMessages error:', err);
@@ -472,24 +640,7 @@ export const databaseService = {
       if (error && (error.code === '42703' || String(error.message).toLowerCase().includes('column'))) {
         const senderId = messageData.senderId;
         const receiverId = messageData.receiverId;
-
-        // Try to find an existing chat between the two
-        const { data: found } = await supabase
-          .from('chats')
-          .select('id')
-          .or(`and(patient_id.eq.${senderId},caregiver_id.eq.${receiverId}),and(patient_id.eq.${receiverId},caregiver_id.eq.${senderId})`)
-          .limit(1);
-
-        let chatId = found && found[0] && found[0].id;
-        if (!chatId) {
-          // attempt to create a chat row
-          const payload: any = { patient_id: senderId, caregiver_id: receiverId, created_by: senderId, created_at: new Date().toISOString() };
-          const { data: createdChat, error: createErr } = await supabase.from('chats').insert([payload]).select('id').single();
-          if (!createErr && createdChat) chatId = createdChat.id;
-        }
-
-        if (!chatId) throw error;
-
+        const chatId = await this.ensureDirectChat(senderId, receiverId);
         const insert2: any = { chat_id: chatId, sender_id: senderId, content: messageData.message, type: messageData.type || 'text' };
         if (messageData.timestamp) insert2.created_at = new Date(messageData.timestamp).toISOString();
         const { data: d2, error: e2 } = await supabase.from('messages').insert([insert2]).select().single();
@@ -504,6 +655,14 @@ export const databaseService = {
       throw err;
     }
   },
+  async sendMessageInChat(senderId: string, peerId: string, content: string, type: 'text' | 'update' = 'text', timestamp?: Date) {
+    const chatId = await this.ensureDirectChat(senderId, peerId);
+    const payload: any = { chat_id: chatId, sender_id: senderId, content, type };
+    if (timestamp) payload.created_at = timestamp.toISOString();
+    const { data, error } = await supabase.from('messages').insert([payload]).select().single();
+    if (error) throw error;
+    return data;
+  },
 
   async markMessagesDelivered(userId: string) {
     try {
@@ -512,7 +671,18 @@ export const databaseService = {
         .update({ delivered_at: new Date().toISOString() })
         .eq('receiver_id', userId)
         .is('delivered_at', null);
-      if (error) throw error;
+      if (error) {
+        // If receiver_id column doesn't exist (chat-based schema), fallback: mark all incoming messages as delivered
+        if (error.code === '42703' || String(error.message).toLowerCase().includes('column')) {
+          await supabase
+            .from('messages')
+            .update({ delivered_at: new Date().toISOString() })
+            .neq('sender_id', userId)
+            .is('delivered_at', null);
+        } else {
+          throw error;
+        }
+      }
     } catch (err) {
       console.error('markMessagesDelivered error:', err);
     }
@@ -525,7 +695,17 @@ export const databaseService = {
         .update({ read_at: new Date().toISOString() })
         .eq('receiver_id', userId)
         .is('read_at', null);
-      if (error) throw error;
+      if (error) {
+        if (error.code === '42703' || String(error.message).toLowerCase().includes('column')) {
+          await supabase
+            .from('messages')
+            .update({ read_at: new Date().toISOString() })
+            .neq('sender_id', userId)
+            .is('read_at', null);
+        } else {
+          throw error;
+        }
+      }
     } catch (err) {
       console.error('markMessagesRead error:', err);
     }
@@ -557,8 +737,29 @@ export const databaseService = {
         .eq('role', 'caregiver')
         .order('created_at', { ascending: false });
 
-      if (pErr) throw pErr;
-      return (profiles || []).map((p: any) => ({ id: p.id, name: p.full_name || '', role: p.role || 'Caregiver', isOnline: false }));
+      if (!pErr && profiles && profiles.length) {
+        return (profiles || []).map((p: any) => ({ id: p.id, name: p.full_name || '', role: p.role || 'Caregiver', isOnline: false }));
+      }
+
+      // Final fallback: peers from existing chats (chat_members)
+      const { data: memberRows } = await supabase
+        .from('chat_members')
+        .select('chat_id')
+        .eq('user_id', userId);
+      const chatIds = (memberRows || []).map((m: any) => m.chat_id);
+      if (!chatIds.length) return [];
+      const { data: peers } = await supabase
+        .from('chat_members')
+        .select('user_id')
+        .in('chat_id', chatIds as any)
+        .neq('user_id', userId);
+      const peerIds = Array.from(new Set((peers || []).map((p: any) => p.user_id)));
+      if (!peerIds.length) return [];
+      const { data: names } = await supabase
+        .from('user_profiles')
+        .select('id, full_name, role')
+        .in('id', peerIds);
+      return (names || []).map((p: any) => ({ id: p.id, name: p.full_name || 'User', role: p.role || 'Caregiver', isOnline: false }));
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('getCaregivers error:', err);

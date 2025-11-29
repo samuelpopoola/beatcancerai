@@ -2,6 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Send, Bell, MoreVertical } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { databaseService } from '../services/database';
+import { useRealtimeChannel } from '../hooks/useRealtimeChannel';
+import VideoCall from '../components/VideoCall';
+import DoctorList from '../components/DoctorList';
 
 interface Message {
   id: string;
@@ -28,6 +31,8 @@ const Messaging: React.FC = () => {
   const [newMessage, setNewMessage] = useState('');
   const [caregivers, setCaregivers] = useState<Caregiver[]>([]);
   const [selectedCaregiver, setSelectedCaregiver] = useState<string>('');
+  const [showVideoCall, setShowVideoCall] = useState(false);
+  const [roomUrl, setRoomUrl] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const quickUpdates = [
@@ -39,19 +44,44 @@ const Messaging: React.FC = () => {
 
   useEffect(() => {
     if (userId) {
-      loadMessages();
       loadCaregivers();
     }
   }, [userId]);
+
+  useEffect(() => {
+    if (userId && selectedCaregiver) {
+      loadMessages();
+    }
+  }, [userId, selectedCaregiver]);
+
+  // Realtime: subscribe to new messages involving this user
+  useRealtimeChannel({
+    channelName: userId ? `messages:${userId}` : 'messages',
+    onInsert: (payload) => {
+      const row = payload?.new;
+      if (!row) return;
+      if (!userId) return;
+      // Only react if it involves current conversation participants
+      if (row.sender_id === userId || row.sender_id === selectedCaregiver) {
+        // Reload scoped history to avoid cross-chat contamination
+        loadMessages();
+        if (row.sender_id !== userId) {
+          databaseService.markMessagesDelivered(userId).catch(() => {});
+          databaseService.markMessagesRead(userId).catch(() => {});
+        }
+      }
+    },
+    filter: { table: 'messages' },
+  });
 
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
 
   const loadMessages = async () => {
-    if (!userId) return;
+    if (!userId || !selectedCaregiver) return;
     try {
-      const userMessages = await databaseService.getMessages(userId);
+      const userMessages = await databaseService.getMessages(userId, selectedCaregiver);
       setMessages(userMessages);
       // Mark any incoming messages as delivered/read
       await databaseService.markMessagesDelivered(userId);
@@ -82,7 +112,8 @@ const Messaging: React.FC = () => {
         senderId: userId,
         receiverId: selectedCaregiver,
         message: newMessage,
-        timestamp: new Date()
+        type: 'text',
+        timestamp: new Date(),
       });
       setNewMessage('');
       loadMessages();
@@ -99,8 +130,8 @@ const Messaging: React.FC = () => {
         senderId: userId,
         receiverId: selectedCaregiver,
         message: update,
+        type: 'update',
         timestamp: new Date(),
-        type: 'update'
       });
       loadMessages();
     } catch (error) {
@@ -110,6 +141,22 @@ const Messaging: React.FC = () => {
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  const startVideoCall = async (doctorId?: string) => {
+    const target = doctorId || selectedCaregiver || caregivers[0]?.id;
+    if (!target) {
+      alert('Select a clinician before starting a consultation.');
+      return;
+    }
+    const url = `https://beatcancerai.daily.co/consultation-${target}-${Date.now()}`;
+    setRoomUrl(url);
+    setShowVideoCall(true);
+  };
+
+  const startChat = (doctorId: string) => {
+    setSelectedCaregiver(doctorId);
+    setShowVideoCall(false);
   };
 
   const formatTime = (timestamp: Date) => {
@@ -129,6 +176,7 @@ const Messaging: React.FC = () => {
   }
 
   return (
+    <>
     <div className="max-w-4xl mx-auto h-screen flex flex-col">
       {/* Header */}
       <div className="bg-white border-b border-gray-200 p-4">
@@ -144,6 +192,19 @@ const Messaging: React.FC = () => {
             <MoreVertical className="w-5 h-5 text-gray-400" />
           </div>
         </div>
+        <div className="mt-4">
+          {showVideoCall ? (
+            <VideoCall roomUrl={roomUrl} onLeave={() => setShowVideoCall(false)} title="Video Consultation" />
+          ) : (
+            <button
+              onClick={() => startVideoCall()}
+              className="flex items-center gap-2 rounded-lg bg-green-600 px-6 py-3 text-white"
+            >
+              <span role="img" aria-label="phone">📞</span>
+              Start Video Consultation
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex flex-1 overflow-hidden">
@@ -152,6 +213,11 @@ const Messaging: React.FC = () => {
           <div className="mb-6">
             <h3 className="font-semibold text-gray-700 mb-3">Caregivers</h3>
             <div className="space-y-3">
+              {caregivers.length === 0 && (
+                <div className="text-sm text-gray-500 bg-white border border-gray-200 rounded-lg p-3">
+                  No caregivers yet. Select a clinician or ask them to join.
+                </div>
+              )}
               {caregivers.map((caregiver) => (
                 <div
                   key={caregiver.id}
@@ -261,15 +327,16 @@ const Messaging: React.FC = () => {
             <div className="flex space-x-4">
               <input
                 type="text"
-                placeholder="Type a short update..."
+                placeholder={selectedCaregiver ? 'Type a short update...' : 'Select a caregiver to start chatting'}
                 value={newMessage}
                 onChange={(e) => setNewMessage(e.target.value)}
                 onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                disabled={!selectedCaregiver}
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:text-gray-400"
               />
               <button
                 onClick={sendMessage}
-                disabled={!newMessage.trim()}
+                disabled={!newMessage.trim() || !selectedCaregiver}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Send className="w-5 h-5" />
@@ -279,6 +346,8 @@ const Messaging: React.FC = () => {
         </div>
       </div>
     </div>
+    <DoctorList onStartVideo={startVideoCall} onStartChat={startChat} />
+    </>
   );
 };
 
